@@ -3,7 +3,6 @@ drone-telemetry-platform/
 ├── README.md
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   ├── INTERVIEW_GUIDE.md        ← we build this together
 │   └── DECISIONS.md              ← ADRs (why X over Y)
 ├── db/
 │   └── migrations/
