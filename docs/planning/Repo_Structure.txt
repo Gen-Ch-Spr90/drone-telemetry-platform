@@ -1,0 +1,22 @@
+drone-telemetry-platform/
+├── docker-compose.yml
+├── README.md
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── INTERVIEW_GUIDE.md        ← we build this together
+│   └── DECISIONS.md              ← ADRs (why X over Y)
+├── db/
+│   └── migrations/
+│       └── V1__init.sql
+├── tools/
+│   └── synthetic_flight_generator.py
+├── ingestion-service/            ← Spring Boot
+│   ├── pom.xml
+│   └── src/main/java/com/limloch/telemetry/
+│       ├── IngestionApplication.java
+│       ├── domain/               (entities)
+│       ├── repository/           (Spring Data JPA)
+│       ├── service/              (CSV parse, batch insert)
+│       └── web/                  (REST controllers)
+└── samples/
+    └── flight_001.csv            (generated)

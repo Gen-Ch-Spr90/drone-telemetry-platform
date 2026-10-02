@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: drone-telemetry-platform
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/telemetry}
+    username: ${POSTGRES_USER:telemetry}
+    password: ${POSTGRES_PASSWORD:telemetry}
+  flyway:
+    enabled: true
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+
+server:
+  error:
+    include-message: always

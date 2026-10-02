@@ -1,0 +1,40 @@
+┌─────────────────────┐
+│  Data Sources       │
+│  • Synthetic gen    │
+│  • DJI log → CSV    │
+│  • (future) live    │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Ingestion Service  │  ← Spring Boot
+│  • CSV parser       │
+│  • Validation       │
+│  • Batch insert     │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐        ┌──────────────┐
+│  PostgreSQL+PostGIS │◄───────│  Grafana     │
+│  • flights          │        │  (metrics)   │
+│  • telemetry_points │        └──────────────┘
+│  • flight_events    │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Telemetry REST API │  ← Spring Boot
+│  • /flights         │
+│  • /flights/{id}    │
+│  • /telemetry       │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│  Leaflet Dashboard  │  (Phase 3)
+└─────────────────────┘
+
+┌─────────────────────┐
+│  Auto-Recovery Svc  │  ← Your existing work (Phase 5)
+│  monitors ingestion │
+└─────────────────────┘
