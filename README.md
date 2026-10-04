@@ -1,34 +1,32 @@
 # Drone Telemetry Platform
 
-Spring Boot service for ingesting drone telemetry CSV files into PostgreSQL/PostGIS and querying flights through a REST API.
+End-to-end telemetry platform for drone flights — ingests DJI flight CSVs, stores them in PostgreSQL/PostGIS with spatial indexes, auto-detects events (low battery, weak signal, geofence breaches), serves the data via REST + GeoJSON, and visualizes it in Grafana and an interactive Leaflet map.
 
-## Requirements
+Built as a portfolio project combining drone operations with production-grade backend engineering.
 
-- Java 25 LTS
-- Docker with Compose
+## Features
 
-## Run locally
+- **CSV ingestion** — parses DJI Mavic 2 Pro telemetry logs, batch inserts into PostGIS
+- **Spatial storage** — GIST-indexed geography columns, `ST_MakeLine` for flight paths
+- **Event detection** — automatic flagging of low battery, weak signal, and geofence breaches
+- **REST API** — flights, telemetry points, events, and GeoJSON exports
+- **Grafana dashboards** — battery, altitude, signal, event counts; provisioned as code
+- **Interactive map** — Leaflet with satellite imagery, live HUD, playback controls
+- **Integration testing** — Testcontainers with real PostGIS containers
+- **Docker Compose** — single command brings up the full stack
 
-```bash
-cp .env.example .env
-docker compose up -d postgres
-./mvnw spring-boot:run
-```
+## Tech Stack
 
-Generate sample data and upload it:
+| Layer | Technology |
+|-------|------------|
+| Language | Java 25 LTS |
+| Framework | Spring Boot 4.1 |
+| Database | PostgreSQL 16 + PostGIS 3.4 |
+| Migrations | Flyway |
+| Observability | Grafana 11 |
+| Mapping | Leaflet 1.9 + Esri World Imagery |
+| Testing | JUnit 5, Testcontainers, AssertJ |
+| CI/CD | GitHub Actions |
+| Container | Docker, Docker Compose |
 
-```bash
-mkdir -p samples
-python3 tools:synthetic_flight_generator.py
-curl -F "file=@samples/<generated-file>.csv" http://localhost:8080/api/ingestions
-```
-
-Query the API:
-
-```bash
-curl http://localhost:8080/api/flights
-curl http://localhost:8080/api/flights/<flight-id>
-curl http://localhost:8080/api/flights/<flight-id>/points
-```
-
-Run tests with `./mvnw clean test`.
+## Running Locally
