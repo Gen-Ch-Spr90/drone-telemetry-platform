@@ -1,5 +1,6 @@
 package com.limloch.telemetry;
 
+import com.limloch.telemetry.repository.TelemetryRepository;
 import com.limloch.telemetry.service.FlightCsvIngestionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,12 +8,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -49,6 +50,7 @@ class IngestionIntegrationTest {
 
     @Autowired FlightCsvIngestionService ingestionService;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired TelemetryRepository telemetryRepository;
 
     @Test
     void ingestsCsvEndToEnd() throws IOException {
@@ -82,51 +84,62 @@ class IngestionIntegrationTest {
     void detectsLowBatteryAndWeakSignalEvents() throws IOException {
         Path csv = Files.createTempFile("event-detect-", ".csv");
         Files.writeString(csv, """
-            flight_id,recorded_at,lat,lon,altitude_m,speed_mps,heading_deg,battery_pct,satellites,signal_strength_dbm,gimbal_pitch_deg,gimbal_yaw_deg
-            660e8400-e29b-41d4-a716-446655440001,2026-01-01T13:00:00Z,32.7767,-96.7970,42.5,8.2,180.0,50.0,15,-60.0,-20.0,5.0
-            660e8400-e29b-41d4-a716-446655440001,2026-01-01T13:00:01Z,32.7770,-96.7970,45.0,8.4,180.0,15.0,15,-75.0,-20.0,5.0
-            660e8400-e29b-41d4-a716-446655440001,2026-01-01T13:00:02Z,32.7773,-96.7970,47.5,8.5,180.0,8.0,15,-95.0,-20.0,5.0
-            """);
+                flight_id,recorded_at,lat,lon,altitude_m,speed_mps,heading_deg,battery_pct,satellites,signal_strength_dbm,gimbal_pitch_deg,gimbal_yaw_deg
+                660e8400-e29b-41d4-a716-446655440001,2026-01-01T13:00:00Z,32.7767,-96.7970,42.5,8.2,180.0,50.0,15,-60.0,-20.0,5.0
+                660e8400-e29b-41d4-a716-446655440001,2026-01-01T13:00:01Z,32.7770,-96.7970,45.0,8.4,180.0,15.0,15,-75.0,-20.0,5.0
+                660e8400-e29b-41d4-a716-446655440001,2026-01-01T13:00:02Z,32.7773,-96.7970,47.5,8.5,180.0,8.0,15,-95.0,-20.0,5.0
+                """);
 
         UUID flightId = ingestionService.ingest(csv);
 
         Integer eventCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flight_events WHERE flight_id = ?",
                 Integer.class, flightId);
-        // Row 2: LOW_BATTERY WARNING
-        // Row 3: LOW_BATTERY CRITICAL + WEAK_SIGNAL CRITICAL
         assertThat(eventCount).isEqualTo(3);
 
         Integer criticalBatteryCount = jdbcTemplate.queryForObject("""
-            SELECT COUNT(*) FROM flight_events
-            WHERE flight_id = ? AND event_type = 'LOW_BATTERY' AND severity = 'CRITICAL'
-            """, Integer.class, flightId);
+                SELECT COUNT(*) FROM flight_events
+                WHERE flight_id = ? AND event_type = 'LOW_BATTERY' AND severity = 'CRITICAL'
+                """, Integer.class, flightId);
         assertThat(criticalBatteryCount).isEqualTo(1);
     }
 
     @Test
     void detectsGeofenceBreach() throws IOException {
-        // Insert a small geofence around the Dallas area that our test flight passes through
         jdbcTemplate.update("""
-            INSERT INTO geofences (name, kind, boundary, description)
-            VALUES ('Test Flight Zone', 'RESTRICTED',
-                    ST_GeogFromText('POLYGON((-96.80 32.77, -96.79 32.77, -96.79 32.78, -96.80 32.78, -96.80 32.77))'),
-                    'Test fence')
-            """);
+                INSERT INTO geofences (name, kind, boundary, description)
+                VALUES ('Test Flight Zone', 'RESTRICTED',
+                        ST_GeogFromText('POLYGON((-96.80 32.77, -96.79 32.77, -96.79 32.78, -96.80 32.78, -96.80 32.77))'),
+                        'Test fence')
+                """);
 
         Path csv = Files.createTempFile("geofence-", ".csv");
         Files.writeString(csv, """
-            flight_id,recorded_at,lat,lon,altitude_m,speed_mps,heading_deg,battery_pct,satellites,signal_strength_dbm,gimbal_pitch_deg,gimbal_yaw_deg
-            770e8400-e29b-41d4-a716-446655440002,2026-01-01T14:00:00Z,32.7767,-96.7970,42.5,8.2,180.0,95.0,15,-60.0,-20.0,5.0
-            """);
+                flight_id,recorded_at,lat,lon,altitude_m,speed_mps,heading_deg,battery_pct,satellites,signal_strength_dbm,gimbal_pitch_deg,gimbal_yaw_deg
+                770e8400-e29b-41d4-a716-446655440002,2026-01-01T14:00:00Z,32.7767,-96.7970,42.5,8.2,180.0,95.0,15,-60.0,-20.0,5.0
+                """);
 
         UUID flightId = ingestionService.ingest(csv);
 
         Integer geofenceEventCount = jdbcTemplate.queryForObject("""
-            SELECT COUNT(*) FROM flight_events
-            WHERE flight_id = ? AND event_type = 'GEOFENCE_BREACH'
-            """, Integer.class, flightId);
+                SELECT COUNT(*) FROM flight_events
+                WHERE flight_id = ? AND event_type = 'GEOFENCE_BREACH'
+                """, Integer.class, flightId);
         assertThat(geofenceEventCount).isEqualTo(1);
+    }
+
+    @Test
+    void servesFlightPathAsGeoJson() throws IOException {
+        Path csv = writeSampleCsv();
+        UUID flightId = ingestionService.ingest(csv);
+
+        String pathGeoJson = telemetryRepository.findFlightPathAsGeoJson(flightId);
+
+        assertThat(pathGeoJson).isNotNull();
+        assertThat(pathGeoJson).contains("\"type\":\"LineString\"");
+        assertThat(pathGeoJson).contains("-96.797");
+        assertThat(pathGeoJson).contains("32.7767");
+        assertThat(pathGeoJson).contains("-96.797");
     }
 
     private Path writeSampleCsv() throws IOException {

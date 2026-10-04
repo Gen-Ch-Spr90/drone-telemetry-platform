@@ -40,6 +40,17 @@ public class TelemetryRepository {
             statement.setDouble(11, row.gimbalPitchDeg());
             statement.setDouble(12, row.gimbalYawDeg());
         });
+
+
+    }
+
+    public String findFlightPathAsGeoJson(UUID flightId) {
+        String sql = """
+            SELECT ST_AsGeoJSON(ST_MakeLine(position::geometry ORDER BY recorded_at))::text
+            FROM telemetry_points
+            WHERE flight_id = ?
+            """;
+        return jdbcTemplate.queryForObject(sql, String.class, flightId);
     }
 
     public List<TelemetryPoint> findByFlightId(UUID flightId) {
