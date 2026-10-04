@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Telemetry — Flight Replay</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { box-sizing: border-box; }
+        html, body { margin: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0e1117; color: #e6edf3; }
+        #container { display: flex; height: 100vh; }
+        #sidebar { width: 320px; padding: 20px; background: #161b22; border-right: 1px solid #30363d; overflow-y: auto; }
+        #sidebar h1 { font-size: 18px; margin: 0 0 4px; color: #58a6ff; }
+        #sidebar p.subtitle { font-size: 12px; color: #8b949e; margin: 0 0 20px; }
+        #map { flex: 1; }
+        .panel { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 14px; margin-bottom: 14px; }
+        .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; margin: 0 0 10px; }
+        select, button { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #30363d; background: #21262d; color: #e6edf3; font-size: 14px; cursor: pointer; }
+        button:hover { background: #30363d; }
+        button.primary { background: #238636; border-color: #2ea043; }
+        button.primary:hover { background: #2ea043; }
+        .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+        .stat { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #21262d; }
+        .stat:last-child { border-bottom: none; }
+        .stat-label { color: #8b949e; }
+        .stat-value { color: #e6edf3; font-weight: 600; font-variant-numeric: tabular-nums; }
+        #progress { width: 100%; margin: 10px 0 0; }
+        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 4px 0; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .empty-state { text-align: center; color: #8b949e; font-size: 13px; padding: 20px 0; }
+    </style>
+</head>
+<body>
+<div id="container">
+    <aside id="sidebar">
+        <h1>Drone Telemetry</h1>
+        <p class="subtitle">Flight Replay — PostGIS + Leaflet</p>
+
+        <div class="panel">
+            <h2>Flight</h2>
+            <select id="flightSelect">
+                <option value="">Loading…</option>
+            </select>
+        </div>
+
+        <div class="panel">
+            <h2>Flight Stats</h2>
+            <div class="stat"><span class="stat-label">Drone</span><span class="stat-value" id="statDrone">—</span></div>
+            <div class="stat"><span class="stat-label">Duration</span><span class="stat-value" id="statDuration">—</span></div>
+            <div class="stat"><span class="stat-label">Distance</span><span class="stat-value" id="statDistance">—</span></div>
+            <div class="stat"><span class="stat-label">Max Altitude</span><span class="stat-value" id="statMaxAlt">—</span></div>
+            <div class="stat"><span class="stat-label">Points</span><span class="stat-value" id="statPoints">—</span></div>
+        </div>
+
+        <div class="panel">
+            <h2>Live Telemetry</h2>
+            <div class="stat"><span class="stat-label">Altitude</span><span class="stat-value" id="liveAlt">—</span></div>
+            <div class="stat"><span class="stat-label">Speed</span><span class="stat-value" id="liveSpeed">—</span></div>
+            <div class="stat"><span class="stat-label">Battery</span><span class="stat-value" id="liveBattery">—</span></div>
+            <div class="stat"><span class="stat-label">Signal</span><span class="stat-value" id="liveSignal">—</span></div>
+        </div>
+
+        <div class="panel">
+            <h2>Playback</h2>
+            <div class="btn-row">
+                <button id="playBtn" class="primary" disabled>▶ Play</button>
+                <button id="resetBtn" disabled>⟲ Reset</button>
+            </div>
+            <input type="range" id="progress" min="0" max="100" value="0" disabled />
+        </div>
+
+        <div class="panel">
+            <h2>Legend</h2>
+            <div class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span> Flight path</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#f85149"></span> Critical event</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#d29922"></span> Warning event</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#8b949e;opacity:0.4"></span> Geofence</div>
+        </div>
+    </aside>
+
+    <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // ─────────────────────────────────────────────
+    // Map setup
+    // ─────────────────────────────────────────────
+    const map = L.map('map', { zoomControl: true }).setView([32.7767, -96.7970], 13);
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+        maxZoom: 19
+    }).addTo(map);
+
+    // ─────────────────────────────────────────────
+    // State
+    // ─────────────────────────────────────────────
+    let currentPath = null;         // [[lat,lon], ...]
+    let currentTelemetry = [];      // raw points with altitude/battery/etc
+    let currentMarkers = [];        // event markers
+    let currentGeofences = [];
+    let droneMarker = null;
+    let pathPolyline = null;
+    let playbackTimer = null;
+    let playbackIndex = 0;
+    let isPlaying = false;
+
+    const PLAYBACK_SPEED_MS = 50;   // one telemetry sample per 50ms
+
+    // ─────────────────────────────────────────────
+    // Load flight list
+    // ─────────────────────────────────────────────
+    async function loadFlights() {
+        try {
+            const res = await fetch('/api/flights');
+            const flights = await res.json();
+            const select = document.getElementById('flightSelect');
+            select.innerHTML = '';
+
+            if (!flights.length) {
+                select.innerHTML = '<option value="">No flights ingested</option>';
+                return;
+            }
+
+            flights.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.id;
+                const when = new Date(f.startedAt).toLocaleString();
+                opt.textContent = `${when} — ${Math.round(f.totalDistanceM)}m`;
+                select.appendChild(opt);
+            });
+
+            // ── NEW: Auto-load the first flight ──
+            select.value = flights[0].id;
+            loadFlight(flights[0].id);
+        } catch (err) {
+            console.error('Failed to load flights', err);
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // Load one flight's GeoJSON + telemetry
+    // ─────────────────────────────────────────────
+    async function loadFlight(flightId) {
+        clearMap();
+        if (!flightId) return;
+
+        try {
+            const [geoRes, flightRes, telemetryRes, eventsRes] = await Promise.all([
+                fetch(`/api/flights/${flightId}/geojson`).then(r => r.json()),
+                fetch(`/api/flights/${flightId}`).then(r => r.json()),
+                fetch(`/api/flights/${flightId}/points`).then(r => r.json()),
+                fetch(`/api/flights/${flightId}/events`).then(r => r.json())
+            ]);
+
+            console.log('GeoJSON response:', geoRes);
+            console.log('Flight response:', flightRes);
+            console.log('Telemetry count:', telemetryRes.length);
+            console.log('Events count:', eventsRes.length);
+
+            renderStats(flightRes, telemetryRes);
+            renderPath(geoRes.path);
+            renderEvents(geoRes.events);
+            renderGeofences(geoRes.geofences);
+            currentTelemetry = telemetryRes;
+
+            enablePlayback();
+            if (pathPolyline) {
+                map.fitBounds(pathPolyline.getBounds(), { padding: [40, 40] });
+            }
+
+            // Show first telemetry sample immediately
+            if (telemetryRes.length > 0) {
+                updateDroneAt(0);
+            }
+        } catch (err) {
+            console.error('Failed to load flight', err);
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // Stats panel
+    // ─────────────────────────────────────────────
+    function renderStats(flight, telemetry) {
+        document.getElementById('statDrone').textContent = flight.droneModel || '—';
+
+        if (flight.startedAt && flight.endedAt) {
+            const sec = (new Date(flight.endedAt) - new Date(flight.startedAt)) / 1000;
+            const min = Math.floor(sec / 60);
+            document.getElementById('statDuration').textContent = `${min}m ${Math.round(sec % 60)}s`;
+        }
+        document.getElementById('statDistance').textContent =
+            flight.totalDistanceM ? `${Math.round(flight.totalDistanceM)} m` : '—';
+        document.getElementById('statMaxAlt').textContent =
+            flight.maxAltitudeM ? `${flight.maxAltitudeM.toFixed(1)} m` : '—';
+        document.getElementById('statPoints').textContent = telemetry.length;
+    }
+
+    // ─────────────────────────────────────────────
+    // Path rendering
+    // ─────────────────────────────────────────────
+    function renderPath(pathFeature) {
+        if (!pathFeature || !pathFeature.geometry) return;
+
+        // GeoJSON LineString coordinates are [lon, lat]
+        currentPath = pathFeature.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+
+        pathPolyline = L.polyline(currentPath, {
+            color: '#58a6ff',
+            weight: 4,
+            opacity: 0.9,
+            lineJoin: 'round'
+        }).addTo(map);
+
+        // Start/end markers
+        L.circleMarker(currentPath[0], { radius: 6, color: '#238636', fillColor: '#238636', fillOpacity: 1 })
+            .addTo(map).bindTooltip('Takeoff');
+        L.circleMarker(currentPath[currentPath.length - 1], { radius: 6, color: '#f85149', fillColor: '#f85149', fillOpacity: 1 })
+            .addTo(map).bindTooltip('Landing');
+
+        // Drone marker
+        const droneIcon = L.divIcon({
+            className: 'drone-icon',
+            html: '<div style="font-size:22px;line-height:22px;filter:drop-shadow(0 0 4px #58a6ff)">🛸</div>',
+            iconSize: [22, 22],
+            iconAnchor: [11, 11]
+        });
+        droneMarker = L.marker(currentPath[0], { icon: droneIcon, zIndexOffset: 1000 }).addTo(map);
+    }
+
+    // ─────────────────────────────────────────────
+    // Event markers
+    // ─────────────────────────────────────────────
+    function renderEvents(eventsFeatureCollection) {
+        if (!eventsFeatureCollection || !eventsFeatureCollection.features) return;
+
+        eventsFeatureCollection.features.forEach(f => {
+            const [lon, lat] = f.geometry.coordinates;
+            const props = f.properties;
+            const color = props.severity === 'CRITICAL' ? '#f85149' : '#d29922';
+
+            const marker = L.circleMarker([lat, lon], {
+                radius: 7,
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.8,
+                weight: 2
+            }).addTo(map);
+
+            marker.bindPopup(`
+                <div style="font-family:-apple-system,sans-serif;font-size:13px">
+                    <strong style="color:${color}">${props.event_type}</strong><br>
+                    <span style="color:#8b949e">Severity:</span> ${props.severity}<br>
+                    <span style="color:#8b949e">Time:</span> ${new Date(props.recorded_at).toLocaleTimeString()}
+                </div>
+            `);
+            currentMarkers.push(marker);
+        });
+    }
+
+    // ─────────────────────────────────────────────
+    // Geofence polygons
+    // ─────────────────────────────────────────────
+    function renderGeofences(geofencesFeatureCollection) {
+        if (!geofencesFeatureCollection || !geofencesFeatureCollection.features) return;
+
+        geofencesFeatureCollection.features.forEach(f => {
+            if (!f.geometry) return;
+            // GeoJSON Polygon coordinates are [lon, lat] pairs nested one level
+            const coords = f.geometry.coordinates[0].map(([lon, lat]) => [lat, lon]);
+
+            const polygon = L.polygon(coords, {
+                color: '#8b949e',
+                weight: 2,
+                opacity: 0.6,
+                fillColor: '#8b949e',
+                fillOpacity: 0.15,
+                dashArray: '6 6'
+            }).addTo(map);
+
+            polygon.bindTooltip(f.properties.name || 'Geofence');
+            currentGeofences.push(polygon);
+        });
+    }
+
+    // ─────────────────────────────────────────────
+    // Playback controls
+    // ─────────────────────────────────────────────
+    function enablePlayback() {
+        document.getElementById('playBtn').disabled = false;
+        document.getElementById('resetBtn').disabled = false;
+        document.getElementById('progress').disabled = false;
+        document.getElementById('progress').value = 0;
+        playbackIndex = 0;
+    }
+
+    function togglePlay() {
+        if (!currentTelemetry.length) return;
+        isPlaying = !isPlaying;
+        document.getElementById('playBtn').textContent = isPlaying ? '⏸ Pause' : '▶ Play';
+
+        if (isPlaying) {
+            playbackTimer = setInterval(step, PLAYBACK_SPEED_MS);
+        } else {
+            clearInterval(playbackTimer);
+        }
+    }
+
+    function step() {
+        if (playbackIndex >= currentTelemetry.length - 1) {
+            stopPlayback();
+            return;
+        }
+        playbackIndex++;
+        updateDroneAt(playbackIndex);
+
+        const pct = (playbackIndex / (currentTelemetry.length - 1)) * 100;
+        document.getElementById('progress').value = pct;
+    }
+
+    function stopPlayback() {
+        isPlaying = false;
+        clearInterval(playbackTimer);
+        document.getElementById('playBtn').textContent = '▶ Play';
+    }
+
+    function reset() {
+        stopPlayback();
+        playbackIndex = 0;
+        updateDroneAt(0);
+        document.getElementById('progress').value = 0;
+    }
+
+    function updateDroneAt(index) {
+        const point = currentTelemetry[index];
+        if (!point || !droneMarker) return;
+
+        const lat = point.lat;
+        const lon = point.lon;
+
+        droneMarker.setLatLng([lat, lon]);
+        document.getElementById('liveAlt').textContent =
+            point.altitude_m != null ? point.altitude_m.toFixed(1) + ' m' : '—';
+        document.getElementById('liveSpeed').textContent =
+            point.speed_mps != null ? point.speed_mps.toFixed(1) + ' m/s' : '—';
+        document.getElementById('liveBattery').textContent =
+            point.battery_pct != null ? point.battery_pct.toFixed(0) + '%' : '—';
+        document.getElementById('liveSignal').textContent =
+            point.signal_strength_dbm != null ? point.signal_strength_dbm.toFixed(0) + ' dBm' : '—';
+    }
+
+    // ─────────────────────────────────────────────
+    // Cleanup between flights
+    // ─────────────────────────────────────────────
+    function clearMap() {
+        stopPlayback();
+        if (pathPolyline) { map.removeLayer(pathPolyline); pathPolyline = null; }
+        if (droneMarker) { map.removeLayer(droneMarker); droneMarker = null; }
+        currentMarkers.forEach(m => map.removeLayer(m));
+        currentGeofences.forEach(g => map.removeLayer(g));
+        currentMarkers = [];
+        currentGeofences = [];
+        currentPath = null;
+        currentTelemetry = [];
+        playbackIndex = 0;
+    }
+
+    // ─────────────────────────────────────────────
+    // Wire up UI
+    // ─────────────────────────────────────────────
+    document.getElementById('flightSelect').addEventListener('change', e => loadFlight(e.target.value));
+    document.getElementById('playBtn').addEventListener('click', togglePlay);
+    document.getElementById('resetBtn').addEventListener('click', reset);
+    document.getElementById('progress').addEventListener('input', e => {
+        stopPlayback();
+        const idx = Math.floor((e.target.value / 100) * (currentTelemetry.length - 1));
+        playbackIndex = idx;
+        updateDroneAt(idx);
+    });
+
+    // Boot
+    loadFlights();
+</script>
+</body>
+</html>
