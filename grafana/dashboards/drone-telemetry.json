@@ -1,0 +1,139 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "postgres", "uid": "telemetry"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "legend": {"calcs": ["min", "max", "mean"], "displayMode": "table", "placement": "right"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "telemetry"},
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT recorded_at AS time, battery_pct AS \"Battery %\" FROM telemetry_points WHERE $__timeFilter(recorded_at) ORDER BY recorded_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Battery % Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "telemetry"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "lengthm"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {
+        "legend": {"calcs": ["min", "max", "mean"], "displayMode": "table", "placement": "right"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "telemetry"},
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT recorded_at AS time, altitude_m AS \"Altitude (m)\" FROM telemetry_points WHERE $__timeFilter(recorded_at) ORDER BY recorded_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Altitude Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "telemetry"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "unit": "dBm"
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {
+        "legend": {"calcs": ["min", "max", "mean"], "displayMode": "table", "placement": "right"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "telemetry"},
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT recorded_at AS time, signal_strength_dbm AS \"Signal (dBm)\" FROM telemetry_points WHERE $__timeFilter(recorded_at) ORDER BY recorded_at",
+          "refId": "A"
+        }
+      ],
+      "title": "Signal Strength Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "postgres", "uid": "telemetry"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 80, "lineWidth": 1, "showPoints": "never"}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "targets": [
+        {
+          "datasource": {"type": "postgres", "uid": "telemetry"},
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT event_type AS \"Event Type\", severity AS \"Severity\", COUNT(*) AS \"Count\" FROM flight_events WHERE $__timeFilter(recorded_at) GROUP BY event_type, severity ORDER BY \"Count\" DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Events by Type and Severity",
+      "type": "barchart"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["drone", "telemetry", "limloch"],
+  "templating": {"list": []},
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Drone Telemetry Overview",
+  "uid": "drone-telemetry-overview",
+  "version": 1
+}
