@@ -3,6 +3,7 @@ package com.limloch.telemetry.service;
 import com.limloch.telemetry.domain.FlightEvent;
 import org.springframework.stereotype.Component;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -16,6 +17,9 @@ public class FlightEventDetector {
     private static final double WEAK_SIGNAL_DBM = -80.0;
     private static final double CRITICAL_SIGNAL_DBM = -90.0;
 
+    /**
+     * Pure computation: derives events from CSV rows only (no database access).
+     */
     public List<FlightEvent> detect(UUID flightId, List<TelemetryCsvRow> rows) {
         List<FlightEvent> events = new ArrayList<>();
 
@@ -43,6 +47,20 @@ public class FlightEventDetector {
             }
         }
 
+        return events;
+    }
+
+    /**
+     * Database-dependent: given a list of geofence names the flight entered,
+     * produce GEOFENCE_BREACH events.
+     */
+    public List<FlightEvent> detectGeofenceEvents(UUID flightId, List<String> breachedGeofences) {
+        List<FlightEvent> events = new ArrayList<>();
+        for (String fenceName : breachedGeofences) {
+            events.add(new FlightEvent(flightId, OffsetDateTime.now(),
+                    "GEOFENCE_BREACH", "CRITICAL",
+                    "{\"geofence\":\"" + fenceName + "\"}"));
+        }
         return events;
     }
 }

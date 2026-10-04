@@ -3,6 +3,7 @@ package com.limloch.telemetry.service;
 import com.limloch.telemetry.repository.FlightRepository;
 import com.limloch.telemetry.repository.TelemetryRepository;
 import com.limloch.telemetry.repository.FlightEventRepository;
+import com.limloch.telemetry.repository.GeofenceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,10 +24,12 @@ public class FlightCsvIngestionService {
     private final FlightEventDetector eventDetector;
     private final FlightEventRepository eventRepository;
 
+    private final GeofenceRepository geofenceRepository;
+
     public FlightCsvIngestionService(FlightRepository flights, TelemetryRepository telemetry,
                                      IngestionAuditService audit, CsvParser parser,
                                      FlightMapper mapper, FlightEventDetector eventDetector,
-                                     FlightEventRepository eventRepository) {
+                                     FlightEventRepository eventRepository, GeofenceRepository geofenceRepository) {
         this.flights = flights;
         this.telemetry = telemetry;
         this.audit = audit;
@@ -34,6 +37,7 @@ public class FlightCsvIngestionService {
         this.mapper = mapper;
         this.eventDetector = eventDetector;
         this.eventRepository = eventRepository;
+        this.geofenceRepository = geofenceRepository;
     }
 
     @Transactional
@@ -47,6 +51,11 @@ public class FlightCsvIngestionService {
             var events = eventDetector.detect(flightId, rows);
             if (!events.isEmpty()) {
                 eventRepository.saveAll(events);
+            }
+            var breachedFences = geofenceRepository.findBreachedGeofences(flightId);
+            if (!breachedFences.isEmpty()) {
+                var geofenceEvents = eventDetector.detectGeofenceEvents(flightId, breachedFences);
+                eventRepository.saveAll(geofenceEvents);
             }
             audit.success(auditId, rows.size());
             return flightId;

@@ -12,6 +12,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -22,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
 @SpringBootTest
+@Transactional
 class IngestionIntegrationTest {
 
     @Container
@@ -33,7 +35,10 @@ class IngestionIntegrationTest {
             .withPassword("telemetry")
             .withCopyFileToContainer(
                     MountableFile.forClasspathResource("db/migration/V1__init.sql"),
-                    "/docker-entrypoint-initdb.d/V1__init.sql");
+                    "/docker-entrypoint-initdb.d/V1__init.sql")
+            .withCopyFileToContainer(
+                    MountableFile.forClasspathResource("db/migration/V2__geofences.sql"),
+                    "/docker-entrypoint-initdb.d/V2__geofences.sql");
 
     @DynamicPropertySource
     static void registerDataSource(DynamicPropertyRegistry registry) {
@@ -97,6 +102,31 @@ class IngestionIntegrationTest {
             WHERE flight_id = ? AND event_type = 'LOW_BATTERY' AND severity = 'CRITICAL'
             """, Integer.class, flightId);
         assertThat(criticalBatteryCount).isEqualTo(1);
+    }
+
+    @Test
+    void detectsGeofenceBreach() throws IOException {
+        // Insert a small geofence around the Dallas area that our test flight passes through
+        jdbcTemplate.update("""
+            INSERT INTO geofences (name, kind, boundary, description)
+            VALUES ('Test Flight Zone', 'RESTRICTED',
+                    ST_GeogFromText('POLYGON((-96.80 32.77, -96.79 32.77, -96.79 32.78, -96.80 32.78, -96.80 32.77))'),
+                    'Test fence')
+            """);
+
+        Path csv = Files.createTempFile("geofence-", ".csv");
+        Files.writeString(csv, """
+            flight_id,recorded_at,lat,lon,altitude_m,speed_mps,heading_deg,battery_pct,satellites,signal_strength_dbm,gimbal_pitch_deg,gimbal_yaw_deg
+            770e8400-e29b-41d4-a716-446655440002,2026-01-01T14:00:00Z,32.7767,-96.7970,42.5,8.2,180.0,95.0,15,-60.0,-20.0,5.0
+            """);
+
+        UUID flightId = ingestionService.ingest(csv);
+
+        Integer geofenceEventCount = jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM flight_events
+            WHERE flight_id = ? AND event_type = 'GEOFENCE_BREACH'
+            """, Integer.class, flightId);
+        assertThat(geofenceEventCount).isEqualTo(1);
     }
 
     private Path writeSampleCsv() throws IOException {

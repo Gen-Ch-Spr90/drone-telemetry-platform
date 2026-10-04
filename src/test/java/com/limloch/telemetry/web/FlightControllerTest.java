@@ -2,6 +2,7 @@ package com.limloch.telemetry.web;
 
 import com.limloch.telemetry.repository.FlightRepository;
 import com.limloch.telemetry.repository.TelemetryRepository;
+import com.limloch.telemetry.repository.FlightEventRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -21,7 +22,10 @@ class FlightControllerTest {
         FlightRepository flights = mock(FlightRepository.class);
         UUID flightId = UUID.randomUUID();
         when(flights.findById(flightId)).thenReturn(Optional.empty());
-        FlightController controller = new FlightController(flights, mock(TelemetryRepository.class));
+        FlightController controller = new FlightController(
+                flights,
+                mock(TelemetryRepository.class),
+                mock(com.limloch.telemetry.repository.FlightEventRepository.class));
 
         assertThatThrownBy(() -> controller.get(flightId))
                 .isInstanceOfSatisfying(ResponseStatusException.class,

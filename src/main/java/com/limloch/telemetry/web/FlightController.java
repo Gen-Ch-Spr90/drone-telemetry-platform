@@ -19,9 +19,12 @@ public class FlightController {
     private final FlightRepository flights;
     private final TelemetryRepository telemetry;
 
-    public FlightController(FlightRepository flights, TelemetryRepository telemetry) {
+    private final com.limloch.telemetry.repository.FlightEventRepository eventRepository;
+
+    public FlightController(FlightRepository flights, TelemetryRepository telemetry, com.limloch.telemetry.repository.FlightEventRepository eventRepository) {
         this.flights = flights;
         this.telemetry = telemetry;
+        this.eventRepository = eventRepository;
     }
 
     @GetMapping
@@ -33,6 +36,14 @@ public class FlightController {
     public FlightDetail get(@PathVariable UUID id) {
         return flights.findById(id).map(FlightDetail::from)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Flight not found"));
+    }
+
+    @GetMapping("/{id}/events")
+    public List<com.limloch.telemetry.domain.FlightEvent> events(@PathVariable UUID id) {
+        if (!flights.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Flight not found");
+        }
+        return eventRepository.findByFlightIdOrderByRecordedAtAsc(id);
     }
 
     @GetMapping("/{id}/points")
