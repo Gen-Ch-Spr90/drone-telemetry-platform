@@ -34,7 +34,7 @@ public class FlightCsvIngestionService {
         try {
             var rows = parser.parse(csvPath);
             UUID flightId = rows.getFirst().flightId();
-            flights.save(mapper.from(csvPath, rows));
+            flights.saveAndFlush(mapper.from(csvPath, rows));
             telemetry.batchInsert(flightId, rows);
             audit.success(auditId, rows.size());
             return flightId;

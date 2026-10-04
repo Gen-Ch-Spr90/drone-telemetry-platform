@@ -6,6 +6,7 @@ import jakarta.persistence.Table;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import jakarta.persistence.Column;
 
 @Entity
 @Table(name = "flights")
@@ -17,7 +18,10 @@ public class Flight {
     private String pilot;
     private OffsetDateTime startedAt;
     private OffsetDateTime endedAt;
+    @Column(name = "total_distance_m")
     private Double totalDistanceM;
+
+    @Column(name = "max_altitude_m")
     private Double maxAltitudeM;
     private String sourceFile;
 
